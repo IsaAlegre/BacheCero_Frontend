@@ -1,0 +1,13 @@
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { useSession } from '../api'
+
+// /vecino/* y /municipio/* piden sesión del rol correspondiente.
+// Como la sesión se guarda por rol, una cuenta de vecino nunca abre el dashboard.
+export default function RequireRole({ role }) {
+  const session = useSession(role)
+  const location = useLocation()
+  if (!session || session.role !== role) {
+    return <Navigate to={`/${role}/login`} replace state={{ from: location.pathname }} />
+  }
+  return <Outlet />
+}

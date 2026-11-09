@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+@import 'leaflet/dist/leaflet.css';
+
+/* Modo oscuro por clase: <html class="dark"> (ver src/lib/theme.js). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* Marca */
+  --color-navy: #1f3b57;
+  --color-navy-50: #eef3f8;
+  --color-navy-100: #d6e2ee;
+  --color-navy-200: #adc4dc;
+  --color-navy-300: #7fa2c5;
+  --color-navy-400: #5481ab;
+  --color-navy-500: #3a6690;
+  --color-navy-600: #2b5074;
+  --color-navy-700: #1f3b57;
+  --color-navy-800: #182f46;
+  --color-navy-900: #122335;
+  --color-navy-950: #0b1724;
+  --color-orange: #f28c28;
+  --color-orange-dark: #d9741a;
+
+  /* Prioridad (mismos valores que LEVELS en config.js) */
+  --color-prio-alta: #e03131;
+  --color-prio-media: #f28c28;
+  --color-prio-baja: #f2c94c;
+
+  /* Estado del caso */
+  --color-st-pendiente: #868e96;
+  --color-st-programado: #1c7ed6;
+  --color-st-reparacion: #f28c28;
+  --color-st-resuelto: #2f9e44;
+}
+
+/* Superficies que cambian con el modo: bg-canvas, bg-surface, text-ink, text-muted, border-line. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+}
+
+:root {
+  --canvas: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef2f6;
+  --ink: #142536;
+  --muted: #56677a;
+  --line: #dbe2ea;
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #0b1621;
+  --surface: #13212f;
+  --surface-2: #1b2c3d;
+  --ink: #e8eef4;
+  --muted: #a3b3c3;
+  --line: #2a3d51;
+  color-scheme: dark;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas text-ink antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-orange;
+  }
+}
+
+/* Leaflet en modo oscuro: se oscurecen solo las tiles (los marcadores quedan con su color). */
+.dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9);
+}
+.dark .leaflet-container {
+  background: #1b2c3d;
+}
+.dark .leaflet-tooltip,
+.dark .leaflet-control-attribution,
+.dark .leaflet-bar a {
+  background: #13212f;
+  color: #e8eef4;
+  border-color: #2a3d51;
+}
+.dark .leaflet-control-attribution a {
+  color: #7fa2c5;
+}
