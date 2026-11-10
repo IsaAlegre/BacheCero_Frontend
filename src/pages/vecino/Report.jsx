@@ -187,9 +187,9 @@ function PhotoPicker({ coarse, preview, onFile }) {
           </span>
         </>
       )}
-      <input type="file" accept="image/*" capture={coarse ? 'environment' : undefined}
+      <input type="file" accept="image/*"
         onChange={(e) => onFile(e.target.files?.[0])} className="sr-only" aria-label="Foto del bache" />
-    </label>
+    </label> 
   )
 }
 
