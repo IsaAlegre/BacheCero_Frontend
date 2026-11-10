@@ -1,94 +1,181 @@
-import { listCases, useLive } from '../../api'
+import { useState } from 'react'
+import {
+  createNews, deleteNews, editNews, generateNews, listNewsAdmin, publishNews, useLiveState, useSession,
+} from '../../api'
 import Notice from '../../components/Notice'
-import { Badge, Button, Card, CardTitle, Icon, Spinner } from '../../components/ui'
-import { avgResolutionDays, countBy, formatDays, isThisMonth, lastAt } from '../../lib/stats'
+import { Badge, Button, Card, CardTitle, Icon, Input, Spinner } from '../../components/ui'
+import { formatDate } from '../../lib/format'
 import PageHeader from './PageHeader'
 
-const STEPS = [
-  { icon: 'chart', title: 'Datos del mes', text: 'Casos nuevos, cambios de estado y tiempos de resolución.' },
-  { icon: 'cpu', title: 'Borrador con un LLM', text: 'Un modelo de lenguaje redacta el informe a partir de esos datos.' },
-  { icon: 'pencil', title: 'Revisión del municipio', text: 'Una persona lo lee, corrige y completa.' },
-  { icon: 'checkCircle', title: 'Aprobación y publicación', text: 'Recién ahí se publica.' },
-]
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-// PRÓXIMA ETAPA (no implementado). Muestra el flujo y los datos reales que usaría;
-// NO hay texto generado: el borrador queda vacío a propósito.
 export default function Reports() {
-  const cases = useLive(() => listCases({ includeResolved: true }))
-  if (!cases) return <Spinner />
+  const session = useSession('municipio')
+  if (session?.rol !== 'administrador') {
+    return (
+      <div>
+        <PageHeader title="Informes y novedades" subtitle="Publicaciones del municipio para los vecinos." />
+        <Notice icon="lock" tone="warn" title="Solo para administradores">
+          Los informes y novedades los redacta y publica un administrador. Tu cuenta es de operador.
+        </Notice>
+      </div>
+    )
+  }
+  return <ReportsAdmin />
+}
 
-  const month = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
-  const created = cases.filter((c) => isThisMonth(c.createdAt))
-  const resolved = cases.filter((c) => c.status === 'Resuelto' && isThisMonth(lastAt(c, 'Resuelto')))
-  const changes = cases.flatMap((c) => c.history.slice(1)).filter((h) => isThisMonth(h.at)).length
-  const topBarrio = countBy(created, (c) => c.barrio)[0]
+function ReportsAdmin() {
+  const { data: items, error: loadError } = useLiveState(listNewsAdmin)
+  const [editing, setEditing] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const run = async (fn) => {
+    setBusy(true)
+    setError(null)
+    try {
+      return await fn()
+    } catch (e) {
+      setError(e.message)
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!items && loadError) return <Notice tone="warn" icon="alert">{loadError.message}</Notice>
+  if (!items) return <Spinner />
+
+  const drafts = items.filter((n) => n.status === 'borrador')
+  const published = items.filter((n) => n.status === 'publicado')
 
   return (
     <div>
-      <PageHeader title="Borrador de informe mensual" subtitle={`Informe de ${month}`}>
-        <Badge tone="warn" className="!px-3 !py-1 !text-sm"><Icon name="alert" className="size-4" /> Próxima etapa (no implementado)</Badge>
-      </PageHeader>
+      <PageHeader title="Informes y novedades" subtitle="Todo nace como borrador: nada llega a los vecinos sin que un administrador lo publique." />
 
-      <Notice icon="info" tone="warn" title="Esta pantalla todavía no funciona" className="mb-4">
-        En la próxima etapa, el borrador lo va a generar un LLM con los datos del mes (casos, estados y tiempos).
-        El municipio lo revisa, lo corrige y lo aprueba antes de publicarlo: nada se publica sin revisión humana.
-      </Notice>
+      {error && <Notice tone="warn" icon="alert" className="mb-4">{error}</Notice>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <Card>
-          <CardTitle>Borrador</CardTitle>
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-line bg-surface-2 p-6 text-center text-muted">
-            <Icon name="file" className="size-10" />
-            <p className="max-w-sm">Acá va a aparecer el borrador para revisar y editar. Todavía no hay ningún texto generado.</p>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button disabled><Icon name="cpu" className="size-4" /> Generar borrador</Button>
-            <Button variant="secondary" disabled><Icon name="pencil" className="size-4" /> Editar</Button>
-            <Button variant="success" disabled><Icon name="check" className="size-4" /> Aprobar y publicar</Button>
-          </div>
-        </Card>
-
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
+          {editing && (
+            <Editor
+              key={editing.id ?? 'nuevo'}
+              initial={editing}
+              busy={busy}
+              onCancel={() => setEditing(null)}
+              onSave={async (titulo, contenido) => {
+                const ok = await run(() => (editing.id
+                  ? editNews(editing.id, titulo, contenido)
+                  : createNews(titulo, contenido)))
+                if (ok) setEditing(null)
+              }}
+            />
+          )}
+
           <Card>
-            <CardTitle>Datos que usaría</CardTitle>
-            <dl className="space-y-2 text-sm">
-              <Row label="Casos nuevos este mes" value={created.length} />
-              <Row label="Resueltos este mes" value={resolved.length} />
-              <Row label="Cambios de estado este mes" value={changes} />
-              <Row label="Casos abiertos hoy" value={cases.filter((c) => c.status !== 'Resuelto').length} />
-              <Row label="Resolución promedio" value={formatDays(avgResolutionDays(cases).days)} />
-              <Row label="Barrio con más casos nuevos" value={topBarrio ? `${topBarrio.label} (${topBarrio.value})` : '—'} />
-            </dl>
-            <p className="mt-3 text-xs text-muted">Calculados en vivo con los datos de prueba.</p>
+            <CardTitle action={!editing && (
+              <Button size="sm" variant="secondary" onClick={() => setEditing({ title: '', text: '' })}>
+                <Icon name="pencil" className="size-4" /> Nuevo borrador
+              </Button>
+            )}>
+              Borradores ({drafts.length})
+            </CardTitle>
+            {drafts.length === 0 && <p className="text-sm text-muted">No hay borradores. Generá el informe de un mes o escribí uno nuevo.</p>}
+            <div className="space-y-3">
+              {drafts.map((n) => (
+                <NewsItem key={n.id} n={n}>
+                  <Button size="sm" variant="success" disabled={busy} onClick={() => run(() => publishNews(n.id))}>
+                    <Icon name="check" className="size-4" /> Aprobar y publicar
+                  </Button>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => setEditing(n)}>
+                    <Icon name="pencil" className="size-4" /> Editar
+                  </Button>
+                  <Button size="sm" variant="danger" disabled={busy}
+                    onClick={() => window.confirm('¿Eliminar este borrador?') && run(() => deleteNews(n.id))}>
+                    Eliminar
+                  </Button>
+                </NewsItem>
+              ))}
+            </div>
           </Card>
 
           <Card>
-            <CardTitle>Cómo va a funcionar</CardTitle>
-            <ol className="space-y-3">
-              {STEPS.map((s, i) => (
-                <li key={s.title} className="flex gap-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-2 text-navy dark:text-navy-200">
-                    <Icon name={s.icon} className="size-4" />
-                  </span>
-                  <div className="text-sm">
-                    <p className="font-bold">{i + 1}. {s.title}</p>
-                    <p className="text-muted">{s.text}</p>
-                  </div>
-                </li>
+            <CardTitle>Publicadas ({published.length})</CardTitle>
+            {published.length === 0 && <p className="text-sm text-muted">Todavía no se publicó ninguna novedad.</p>}
+            <div className="space-y-3">
+              {published.map((n) => (
+                <NewsItem key={n.id} n={n}>
+                  <Button size="sm" variant="danger" disabled={busy}
+                    onClick={() => window.confirm('¿Eliminar esta novedad? Los vecinos dejan de verla.') && run(() => deleteNews(n.id))}>
+                    Eliminar
+                  </Button>
+                </NewsItem>
               ))}
-            </ol>
+            </div>
           </Card>
         </div>
+
+        <Generator busy={busy} onGenerate={(anio, mes) => run(() => generateNews(anio, mes))} />
       </div>
     </div>
   )
 }
 
-function Row({ label, value }) {
+function Generator({ busy, onGenerate }) {
+  const now = new Date()
+  const [value, setValue] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+  const [anio, mes] = value.split('-').map(Number)
+  const max = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   return (
-    <div className="flex justify-between gap-3 border-b border-line pb-2 last:border-0 last:pb-0">
-      <dt className="text-muted">{label}</dt>
-      <dd className="text-right font-bold tabular-nums">{value}</dd>
-    </div>
+    <Card className="self-start">
+      <CardTitle>Informe mensual con IA</CardTitle>
+      <p className="mb-3 text-sm text-muted">
+        Un modelo de lenguaje redacta el informe con los datos del mes: tickets resueltos, reparaciones iniciadas
+        y reportes recibidos por barrio. Solo recibe cifras agregadas, nunca fotos ni datos personales.
+      </p>
+      <Input label="Mes" type="month" min="2024-01" max={max} value={value} onChange={(e) => setValue(e.target.value)} />
+      <Button className="mt-3" block disabled={busy || !anio || !mes} onClick={() => onGenerate(anio, mes)}>
+        <Icon name="cpu" className="size-4" /> {busy ? 'Generando…' : `Generar borrador de ${MONTHS[mes - 1] ?? ''}`}
+      </Button>
+      <p className="mt-3 text-xs text-muted">El resultado queda como borrador para revisarlo y corregirlo antes de publicar.</p>
+    </Card>
+  )
+}
+
+function Editor({ initial, busy, onCancel, onSave }) {
+  const [title, setTitle] = useState(initial.title)
+  const [text, setText] = useState(initial.text)
+  const titleError = title.trim().length < 3 ? 'Entre 3 y 150 caracteres' : null
+  const textError = text.trim().length < 10 ? 'Al menos 10 caracteres' : null
+  return (
+    <Card>
+      <CardTitle>{initial.id ? 'Editar borrador' : 'Nuevo borrador'}</CardTitle>
+      <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSave(title.trim(), text.trim()) }}>
+        <Input label="Título" maxLength={150} value={title} onChange={(e) => setTitle(e.target.value)} hint={titleError} />
+        <Input label="Contenido" as="textarea" rows={10} maxLength={10000} value={text} onChange={(e) => setText(e.target.value)} hint={textError} />
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={busy || titleError || textError}>Guardar borrador</Button>
+          <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
+        </div>
+      </form>
+    </Card>
+  )
+}
+
+function NewsItem({ n, children }) {
+  return (
+    <article className="rounded-xl border border-line p-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        {n.origin === 'ia' && <Badge tone="info"><Icon name="cpu" className="size-3.5" /> Redactado con IA</Badge>}
+        <span>
+          {n.status === 'publicado'
+            ? `Publicado ${formatDate(n.at)}${n.approvedBy ? ` · aprobó ${n.approvedBy}` : ''}`
+            : `Creado ${formatDate(n.createdAt)} · ${n.author}`}
+        </span>
+      </div>
+      <h3 className="mt-2 font-bold leading-snug">{n.title}</h3>
+      <p className="mt-1 line-clamp-6 whitespace-pre-line text-sm text-muted">{n.text}</p>
+      <div className="mt-3 flex flex-wrap gap-2">{children}</div>
+    </article>
   )
 }

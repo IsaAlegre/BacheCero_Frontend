@@ -6,7 +6,6 @@ const TONES = {
   success: 'bg-green-50 text-green-900 dark:bg-green-500/15 dark:text-green-100',
 }
 
-// Aviso con ícono (privacidad, revisión humana, reporte agrupado, datos simulados).
 export default function Notice({ icon = 'info', tone = 'info', title, children, className = '' }) {
   return (
     <div className={`flex gap-3 rounded-2xl p-3.5 text-sm ${TONES[tone]} ${className}`}>

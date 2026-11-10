@@ -7,7 +7,6 @@ const ROLES = [
   { to: '/municipio', icon: 'building', title: 'Soy del municipio', text: 'Mapa de prioridades, revisión y gestión de casos.' },
 ]
 
-// Portada: elige la vista. Cada una pide su propio inicio de sesión.
 export default function Landing() {
   return (
     <div className="flex min-h-dvh flex-col bg-navy text-white dark:bg-navy-950">

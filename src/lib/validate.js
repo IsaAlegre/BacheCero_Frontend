@@ -1,14 +1,18 @@
-export const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v).trim())
+// Mismas reglas que el backend: DNI de 7 u 8 dígitos y contraseña de 8 a 72 caracteres.
+export const isDni = (v) => /^\d{7,8}$/.test(cleanDni(v))
+export const cleanDni = (v) => String(v || '').replace(/[.\s]/g, '')
 
-export function validateLogin({ email, password }) {
+export function validateLogin({ dni, password }) {
   const e = {}
-  if (!isEmail(email)) e.email = 'Ingresá un email válido'
-  if (String(password).length < 6) e.password = 'La contraseña tiene que tener 6 caracteres o más'
+  if (!isDni(dni)) e.dni = 'Ingresá tu DNI (7 u 8 números, sin puntos)'
+  if (!String(password)) e.password = 'Ingresá tu contraseña'
   return e
 }
 
-export function validateRegister({ nombre, email, password, confirm }) {
-  const e = validateLogin({ email, password })
+export function validateRegister({ nombre, dni, password, confirm }) {
+  const e = validateLogin({ dni, password })
+  if (String(password).length < 8) e.password = 'La contraseña tiene que tener 8 caracteres o más'
+  if (String(password).length > 72) e.password = 'La contraseña puede tener hasta 72 caracteres'
   if (!String(nombre).trim()) e.nombre = 'Contanos tu nombre'
   if (confirm !== password) e.confirm = 'Las contraseñas no coinciden'
   return e

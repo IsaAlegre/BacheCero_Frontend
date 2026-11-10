@@ -1,7 +1,4 @@
-// Gráficos simples en SVG/HTML propio: se adaptan al ancho del contenedor y
-// toman los colores del tema (sirven en modo claro y oscuro).
 
-// Barras horizontales. data: [{ label, value, color? (clase bg-*) }]
 export function HBars({ data, format = (v) => v, color = 'bg-navy dark:bg-navy-300' }) {
   const max = Math.max(1, ...data.map((d) => d.value))
   return (
@@ -21,7 +18,6 @@ export function HBars({ data, format = (v) => v, color = 'bg-navy dark:bg-navy-3
   )
 }
 
-// Barra apilada al 100 %. data: [{ label, value, color (clase bg-*) }]
 export function StackedBar({ data }) {
   const total = data.reduce((a, d) => a + d.value, 0) || 1
   return (
@@ -37,10 +33,9 @@ export function StackedBar({ data }) {
   )
 }
 
-// Dona. data: [{ label, value, stroke (clase stroke-*), color (clase bg-*) }]
 export function Donut({ data, centerLabel }) {
   const total = data.reduce((a, d) => a + d.value, 0)
-  let offset = 25 // empieza arriba
+  let offset = 25
   return (
     <div className="@container">
       <div className="flex flex-col items-center gap-5 @md:flex-row">

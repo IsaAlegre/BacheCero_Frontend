@@ -6,11 +6,10 @@ import { validateLogin } from '../lib/validate'
 import { AuthError } from './AuthShell'
 import { Button, Input } from './ui'
 
-// Formulario de login compartido por las dos vistas (cambia solo el rol).
 export default function LoginForm({ role }) {
   const nav = useNavigate()
   const location = useLocation()
-  const [form, setForm] = useState({ email: '', password: '' })
+  const [form, setForm] = useState({ dni: '', password: '' })
   const [errors, setErrors] = useState({})
   const [authError, setAuthError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -27,23 +26,22 @@ export default function LoginForm({ role }) {
       await login({ ...data, role })
       nav(location.state?.from || `/${role}`, { replace: true })
     } catch (e) {
-      setAuthError(e.status === 401 ? AUTH_ERROR : 'No pudimos iniciar sesión. Probá de nuevo.')
+      setAuthError(e.status === 401 ? AUTH_ERROR : e.status === 403 || e.status === 0 ? e.message : 'No pudimos iniciar sesión. Probá de nuevo.')
       setBusy(false)
     }
   }
 
   function demo() {
-    const { email, password } = DEMO_USERS[role]
-    setForm({ email, password })
-    enter({ email, password })
+    const { dni, password } = DEMO_USERS[role]
+    setForm({ dni, password })
+    enter({ dni, password })
   }
 
   return (
     <form noValidate className="space-y-4" onSubmit={(e) => { e.preventDefault(); enter(form) }}>
       <AuthError>{authError}</AuthError>
-      <Input label="Email" type="email" autoComplete="email" inputMode="email"
-        value={form.email} onChange={set('email')} error={errors.email}
-        placeholder={role === 'municipio' ? 'nombre@posadas.gob.ar' : 'tu@email.com'} />
+      <Input label="DNI" autoComplete="username" inputMode="numeric"
+        value={form.dni} onChange={set('dni')} error={errors.dni} placeholder="Sin puntos, ej.: 30111222" />
       <Input label="Contraseña" type="password" autoComplete="current-password"
         value={form.password} onChange={set('password')} error={errors.password} />
       <Button type="submit" block size="lg" disabled={busy}>

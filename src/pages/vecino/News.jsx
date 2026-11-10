@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
-import { FAQ, NEWS } from '../../data/news'
-import { Card, Icon, SimBadge } from '../../components/ui'
+import { listNews, useLiveState } from '../../api'
+import { FAQ } from '../../data/news'
+import { Card, Icon, Spinner } from '../../components/ui'
 import { formatDay } from '../../lib/format'
 
 const TABS = [
@@ -8,7 +9,6 @@ const TABS = [
   { to: '/vecino/ayuda', label: 'Preguntas frecuentes' },
 ]
 
-// Dos pestañas (cada una con su ruta, así la barra inferior marca la correcta).
 export default function News({ tab = 'novedades' }) {
   return (
     <div className="space-y-5">
@@ -36,22 +36,31 @@ export default function News({ tab = 'novedades' }) {
           ))}
         </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div className="lg:col-span-2"><SimBadge>Contenido de ejemplo</SimBadge></div>
-          {NEWS.map((n) => (
-            <Card key={n.id} as="article">
-              <div className="flex items-center gap-2 text-xs font-semibold text-muted">
-                <span className="grid size-8 place-items-center rounded-lg bg-orange/15 text-orange-dark dark:text-orange">
-                  <Icon name={n.icon} className="size-4" />
-                </span>
-                {n.tag} · {formatDay(n.at)}
-              </div>
-              <h2 className="mt-2 text-lg font-bold leading-snug">{n.title}</h2>
-              <p className="mt-1 text-sm text-muted">{n.text}</p>
-            </Card>
-          ))}
-        </div>
+        <NewsList />
       )}
+    </div>
+  )
+}
+
+function NewsList() {
+  const { data: news, error } = useLiveState(() => listNews())
+  if (!news && error) return <p className="text-muted">No pudimos cargar las novedades. Probá de nuevo en un rato.</p>
+  if (!news) return <Spinner />
+  if (news.length === 0) return <p className="text-muted">Todavía no hay novedades publicadas.</p>
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      {news.map((n) => (
+        <Card key={n.id} as="article">
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted">
+            <span className="grid size-8 place-items-center rounded-lg bg-orange/15 text-orange-dark dark:text-orange">
+              <Icon name="file" className="size-4" />
+            </span>
+            {formatDay(n.at)}
+          </div>
+          <h2 className="mt-2 text-lg font-bold leading-snug">{n.title}</h2>
+          <p className="mt-1 whitespace-pre-line text-sm text-muted">{n.text}</p>
+        </Card>
+      ))}
     </div>
   )
 }

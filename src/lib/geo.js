@@ -1,4 +1,3 @@
-// Distancia en metros entre dos puntos (fórmula de Haversine).
 export function distanceM(lat1, lng1, lat2, lng2) {
   const R = 6371000
   const toRad = (d) => (d * Math.PI) / 180

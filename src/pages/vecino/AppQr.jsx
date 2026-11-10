@@ -1,8 +1,6 @@
 import QrCode from '../../components/QrCode'
 import { Card } from '../../components/ui'
 
-// En escritorio, en lugar de "Instalar app": QR para abrir la app en el celular.
-// VITE_APP_URL permite fijar la URL pública (por ejemplo, la del deploy).
 export default function AppQr() {
   const url = import.meta.env.VITE_APP_URL || `${window.location.origin}/vecino`
   const local = /^(localhost|127\.|\[::1\])/.test(new URL(url).hostname)

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { checkIA, getMode, setMode, listReviewQueue, logout, useLive, useSession } from '../../api'
+import { checkIA, listReviewQueue, logout, useLive, useSession } from '../../api'
 import { DEFAULT_WEIGHTS } from '../../config'
-import { resetState, useStore } from '../../lib/store'
 import { toggleTheme, useTheme } from '../../lib/theme'
 import { Brand } from '../../components/Logo'
 import Logo from '../../components/Logo'
@@ -17,7 +16,6 @@ const NAV = [
   { to: '/municipio/informes', icon: 'file', label: 'Informes' },
 ]
 
-// Escritorio (≥1024): barra lateral completa. Tablet (768–1023): solo íconos. Celular: drawer.
 export default function MuniLayout() {
   // Los pesos viven acá para que Mapa, Tickets y el detalle usen el mismo puntaje.
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
@@ -54,7 +52,7 @@ export default function MuniLayout() {
         <footer className="mt-8 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100">
           <Icon name="alert" className="mt-0.5 size-4" />
           <span>
-            <b>Datos de prueba:</b> los reclamos previos, la jerarquía de calles y las variables sociales son SIMULADOS.
+            <b>Prototipo:</b> el índice social de los barrios todavía no está cargado (se usa un valor neutro) y la gravedad sale de una regla por tamaño en la foto, sin validar.
           </span>
         </footer>
       </main>
@@ -62,13 +60,10 @@ export default function MuniLayout() {
   )
 }
 
-// compact: en tablet se ven solo los íconos (las etiquetas quedan para lectores de pantalla).
 function Sidebar({ compact = false, onClose }) {
-  useStore()
   const nav = useNavigate()
   const session = useSession('municipio')
   const theme = useTheme()
-  const mode = getMode()
   const queue = useLive(listReviewQueue) || []
   const [iaOk, setIaOk] = useState(null)
   const hide = compact ? 'md:max-lg:sr-only' : ''
@@ -82,8 +77,8 @@ function Sidebar({ compact = false, onClose }) {
 
   const item = 'flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors'
   const itemCompact = compact ? 'md:max-lg:justify-center md:max-lg:px-0' : ''
-  const iaLabel = mode === 'offline' ? 'IA: modo sin conexión' : iaOk === null ? 'IA: verificando…' : iaOk ? 'IA en línea' : 'IA sin conexión'
-  const iaColor = mode === 'offline' ? 'bg-amber-400' : iaOk === null ? 'bg-slate-400' : iaOk ? 'bg-green-400' : 'bg-red-400'
+  const iaLabel = iaOk === null ? 'IA: verificando…' : iaOk ? 'IA en línea' : 'IA sin conexión'
+  const iaColor = iaOk === null ? 'bg-slate-400' : iaOk ? 'bg-green-400' : 'bg-red-400'
 
   return (
     <div className="flex h-full w-full flex-col overflow-y-auto p-3">
@@ -131,20 +126,6 @@ function Sidebar({ compact = false, onClose }) {
           </span>
           <span className={hide}>{iaLabel}</span>
         </div>
-        <button type="button" role="switch" aria-checked={mode === 'offline'} title={compact ? 'Modo sin conexión' : undefined}
-          onClick={() => setMode(mode === 'offline' ? 'live' : 'offline')}
-          className={`${item} ${itemCompact} hover:bg-white/10`}>
-          <Icon name="wifiOff" />
-          <span className={`flex-1 text-left ${hide}`}>Modo sin conexión</span>
-          <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${mode === 'offline' ? 'bg-orange' : 'bg-white/25'} ${hide}`}>
-            <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${mode === 'offline' ? 'left-[1.125rem]' : 'left-0.5'}`} />
-          </span>
-        </button>
-        <button type="button" title={compact ? 'Reiniciar demo' : undefined}
-          onClick={() => { if (confirm('¿Borrar los reportes nuevos y volver a los datos de prueba?')) resetState() }}
-          className={`${item} ${itemCompact} hover:bg-white/10`}>
-          <Icon name="refresh" /><span className={hide}>Reiniciar demo</span>
-        </button>
         <button type="button" onClick={toggleTheme} title={compact ? (theme === 'dark' ? 'Modo claro' : 'Modo oscuro') : undefined}
           className={`${item} ${itemCompact} hover:bg-white/10`}>
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />

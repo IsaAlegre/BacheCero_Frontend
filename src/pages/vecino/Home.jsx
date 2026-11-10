@@ -1,13 +1,13 @@
 import { Link } from 'react-router-dom'
-import { listMyReports, useLive, useSession } from '../../api'
-import { NEWS } from '../../data/news'
-import { Card, CardTitle, Icon, SimBadge } from '../../components/ui'
+import { listMyReports, listNews, useLive, useSession } from '../../api'
+import { Card, CardTitle, Icon } from '../../components/ui'
 import InstallButton from './InstallButton'
 import AppQr from './AppQr'
 
 export default function Home() {
   const session = useSession('vecino')
   const mine = useLive(listMyReports) || []
+  const news = useLive(() => listNews()) || []
   const resolved = mine.filter((r) => r.case?.status === 'Resuelto').length
   const firstName = session?.nombre?.split(' ')[0] || 'vecino'
 
@@ -48,7 +48,6 @@ export default function Home() {
           </Card>
         </Link>
 
-        {/* La PWA es para el celular: en escritorio se ofrece el QR. */}
         <div className="lg:hidden"><InstallButton /></div>
         <div className="hidden lg:block"><AppQr /></div>
       </div>
@@ -58,10 +57,11 @@ export default function Home() {
           Novedades del municipio
         </CardTitle>
         <div className="space-y-3">
-          {NEWS.map((n, i) => (
+          {news.length === 0 && <p className="text-sm text-muted">Todavía no hay novedades publicadas.</p>}
+          {news.slice(0, 4).map((n, i) => (
             <Card key={n.id} className={`gap-3 ${i < 2 ? 'flex' : 'hidden lg:flex'}`}>
               <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-orange/15 text-orange-dark dark:text-orange">
-                <Icon name={n.icon} />
+                <Icon name="file" />
               </span>
               <div className="min-w-0">
                 <p className="font-bold leading-snug">{n.title}</p>
@@ -70,7 +70,6 @@ export default function Home() {
             </Card>
           ))}
         </div>
-        <p className="mt-2 flex items-center gap-2 text-xs text-muted"><SimBadge>Contenido de ejemplo</SimBadge></p>
       </section>
     </div>
   )

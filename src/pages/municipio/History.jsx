@@ -4,7 +4,6 @@ import { Card, Spinner, StatusBadge } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 import PageHeader from './PageHeader'
 
-// Todos los cambios de estado de todos los casos, del más nuevo al más viejo.
 export default function History() {
   const cases = useLive(() => listCases({ includeResolved: true }))
   if (!cases) return <Spinner />

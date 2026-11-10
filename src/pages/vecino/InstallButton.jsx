@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { promptInstall, useInstall } from '../../lib/install'
 import { Button, Card, Icon } from '../../components/ui'
 
-// "Instalar app": Android/Chrome usa beforeinstallprompt; iPhone muestra los pasos.
-// Se oculta si la app ya está instalada o si el navegador no permite instalarla.
 export default function InstallButton() {
   const mode = useInstall()
   const [showSteps, setShowSteps] = useState(false)

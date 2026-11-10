@@ -11,8 +11,6 @@ const NAV = [
   { to: '/vecino/ayuda', icon: 'help', label: 'Ayuda' },
 ]
 
-// Celular primero: columna de 480 px con barra de navegación inferior.
-// Escritorio (≥1024 px): ancho completo, navegación en el encabezado y contenido centrado (1280 px, 1400 px en monitores grandes).
 export default function VecinoLayout() {
   const nav = useNavigate()
   return (

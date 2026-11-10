@@ -17,10 +17,6 @@ const PHOTO_ERRORS = {
   422: 'No pudimos leer la foto. Sacá otra.',
 }
 
-// Celular: 2 pantallas (1. Tomar foto, 2. Confirmar). Escritorio (≥1024 px): un formulario en
-// dos columnas (foto a la izquierda, mapa con buscador a la derecha).
-// Táctil (pointer: coarse): cámara con capture y GPS automático. Mouse: subir foto y marcar en el mapa,
-// sin usar el GPS del navegador salvo que se toque "Usar mi ubicación".
 export default function Report() {
   const nav = useNavigate()
   const coarse = useMediaQuery(COARSE)
@@ -28,7 +24,7 @@ export default function Report() {
   const [step, setStep] = useState('foto')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
-  const [pos, setPos] = useState(null) // null = todavía no se marcó la ubicación
+  const [pos, setPos] = useState(null)
   const [gps, setGps] = useState(coarse ? 'buscando' : 'manual')
   const [description, setDescription] = useState('')
   const [sending, setSending] = useState(false)
@@ -59,7 +55,9 @@ export default function Report() {
       const { report, joined } = await createReport({ file, lat: pos[0], lng: pos[1], description })
       nav(`/vecino/reporte/${report.id}`, { state: { joined } })
     } catch (e) {
-      setError(e instanceof ApiError ? PHOTO_ERRORS[e.status] || 'Error al analizar la foto.' : 'Algo falló. Probá de nuevo.')
+      setError(!(e instanceof ApiError) || e.status >= 500
+        ? 'No pudimos guardar el reporte. Probá de nuevo en un rato.'
+        : PHOTO_ERRORS[e.status] || e.message)
       setSending(false)
     }
   }
@@ -159,7 +157,6 @@ function GpsStatus({ gps }) {
   )
 }
 
-// Táctil: abre la cámara. Mouse: arrastrar y soltar o elegir el archivo.
 function PhotoPicker({ coarse, preview, onFile }) {
   const [dragging, setDragging] = useState(false)
   const dropProps = coarse ? {} : {
@@ -207,9 +204,6 @@ function FocusOn({ focus }) {
   return null
 }
 
-// Mapa para marcar el bache.
-// Celular (compacto): minimapa; se corrige con "Corregir ubicación".
-// Escritorio (big): mapa grande siempre clickeable, buscador de direcciones y "Usar mi ubicación".
 function LocationPicker({ pos, onMove, gps, onUseMyLocation, big = false }) {
   const [editing, setEditing] = useState(false)
   const [focus, setFocus] = useState(pos)
@@ -218,13 +212,16 @@ function LocationPicker({ pos, onMove, gps, onUseMyLocation, big = false }) {
   const searchLabel = useRef(null)
   const canClick = big || editing || !pos
 
-  // Si el punto cambió por GPS o búsqueda, se centra el mapa; si fue un clic, no.
   useEffect(() => {
     if (!pos) return
     if (!fromClick.current) setFocus(pos)
     fromClick.current = false
-    if (searchLabel.current) { setPlace({ street: searchLabel.current, barrio: null }); searchLabel.current = null }
-    else locate(pos[0], pos[1]).then(setPlace)
+    if (searchLabel.current) { setPlace({ street: searchLabel.current, barrio: null }); searchLabel.current = null; return }
+    // La búsqueda tarda (Nominatim, 1 por segundo): si el punto cambia antes, se ignora la respuesta vieja.
+    let alive = true
+    setPlace(null)
+    locate(pos[0], pos[1]).then((p) => alive && setPlace(p))
+    return () => { alive = false }
   }, [pos])
 
   const click = (p) => { fromClick.current = true; onMove(p) }
@@ -286,7 +283,6 @@ function AddressSearch({ onPick }) {
 
   function submit(e) {
     e.preventDefault()
-    // Debounce de 500 ms: evita doble consulta por doble clic o Enter repetido.
     clearTimeout(debounce.current)
     debounce.current = setTimeout(async () => {
       ctrl.current?.abort()

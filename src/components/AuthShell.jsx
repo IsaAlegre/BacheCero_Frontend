@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom'
 import { Brand } from './Logo'
 import { Icon, ThemeToggle } from './ui'
 
-// Marco común de las pantallas de login y registro.
 export default function AuthShell({ subtitle, children, wide = false }) {
   return (
     <div className="flex min-h-dvh flex-col">

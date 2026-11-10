@@ -1,6 +1,5 @@
 import Icon from './Icon'
 
-// Colores de estado: Pendiente gris, Programado azul, En reparación naranja, Resuelto verde.
 export const STATUS_META = {
   Pendiente: {
     icon: 'clock', dot: 'bg-st-pendiente', text: 'text-st-pendiente',

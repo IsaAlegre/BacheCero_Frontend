@@ -15,7 +15,6 @@ export default function Badge({ tone = 'neutral', className = '', children }) {
   )
 }
 
-// Rótulo fijo para todo lo que es de prueba.
 export function SimBadge({ children = 'Simulado' }) {
   return <Badge tone="warn">{children}</Badge>
 }

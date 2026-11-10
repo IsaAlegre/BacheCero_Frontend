@@ -49,7 +49,6 @@ export default function Tickets() {
         </div>
       </PageHeader>
 
-      {/* Celular: tarjetas apiladas */}
       <div className="md:hidden">
         <label className="mb-3 flex items-center gap-2 text-sm">
           <span className="font-semibold">Ordenar por</span>
@@ -82,7 +81,6 @@ export default function Tickets() {
         </ul>
       </div>
 
-      {/* Tablet y escritorio: tabla */}
       <Card padded={false} className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-line bg-surface-2 text-xs uppercase tracking-wide text-muted">

@@ -1,21 +1,26 @@
-import { Badge, Icon } from './ui'
+import { useState } from 'react'
+import { Icon } from './ui'
 
-// Foto difuminada + cajas de la IA. Las cajas vienen en píxeles del original
-// (width/height de la respuesta); el SVG con ese viewBox las escala solo.
-// Los colores de las cajas son fijos (van sobre la foto, no cambian con el modo oscuro).
-export default function AnalysisImage({ imageUrl, analysis, source, className = '' }) {
+// Las cajas vienen en píxeles de la foto que devuelve la IA. El backend no manda el tamaño,
+// así que se toma de la imagen cargada; el SVG con ese viewBox las escala solo.
+export default function AnalysisImage({ imageUrl, analysis, className = '' }) {
+  const [natural, setNatural] = useState(null)
   if (!imageUrl) {
     return (
       <div className={`flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line bg-surface-2 text-sm text-muted ${className}`}>
         <Icon name="image" className="size-8" />
-        Sin foto (reclamo simulado)
+        Foto no disponible
       </div>
     )
   }
-  const { width, height, detections = [] } = analysis
+  const { detections = [] } = analysis
+  const width = analysis.width ?? natural?.width
+  const height = analysis.height ?? natural?.height
   return (
     <div className={`relative overflow-hidden rounded-2xl bg-black ring-1 ring-line ${className}`}>
-      <img src={imageUrl} alt="Foto del reporte con rostros y patentes difuminados" className="block h-auto w-full" />
+      <img src={imageUrl} alt="Foto del reporte con rostros y patentes difuminados" className="block h-auto w-full"
+        onLoad={(e) => setNatural({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })} />
+      {width && height ? (
       <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="absolute inset-0 size-full" aria-hidden="true">
         {detections.map((d, i) => {
           const [x1, y1, x2, y2] = d.bbox
@@ -34,9 +39,7 @@ export default function AnalysisImage({ imageUrl, analysis, source, className = 
           )
         })}
       </svg>
-      {source === 'offline' && (
-        <Badge tone="warn" className="absolute bottom-2 left-2 shadow">Modo sin conexión: respuesta guardada</Badge>
-      )}
+      ) : null}
     </div>
   )
 }

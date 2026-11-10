@@ -1,13 +1,6 @@
-// Interfaz única del front. Hoy: IA en vivo + backend simulado en localStorage.
-// Cuando el backend NestJS esté listo, se reemplaza el cuerpo de cada función
-// por un fetch y los componentes no cambian.
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { IA_BASE, DUPLICATE_RADIUS_M } from './config'
-import { DEMO_USERS } from './data/demoUsers'
-import { getState, setState, useStore } from './lib/store'
-import { reportSeverity, needsReview, worst } from './lib/scoring'
-import { distanceM } from './lib/geo'
-import { fileToDataURL, downscale } from './lib/image'
+import { API_BASE, IA_BASE, CLASS_LABELS, UNKNOWN_HIERARCHY, UNKNOWN_SOCIAL } from './config'
+import { reverseAddress } from './lib/geocode'
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -16,38 +9,24 @@ export class ApiError extends Error {
   }
 }
 
-/* ---------- Sesión ---------- */
-// LOGIN SIMULADO PARA LA DEMO, NO ES SEGURIDAD REAL.
-// Las cuentas de vecinos se guardan en localStorage con la contraseña hasheada
-// (SHA-256), pero cualquiera con acceso al navegador puede leerlas o borrarlas.
-// Con el backend real, cada función pasa a ser un fetch y la sesión, un token.
-//
-// Se guarda una sesión por rol para poder abrir /vecino y /municipio a la vez
-// en el mismo navegador durante la presentación.
+let version = 0
+const changeListeners = new Set()
+function bump() {
+  version += 1
+  listCache.clear()
+  changeListeners.forEach((l) => l())
+}
 
-const USERS_KEY = 'bachecero:users'
+/* ---------- Sesión ---------- */
+
 const sessionKey = (role) => `bachecero:session:${role}`
 const sessionListeners = new Set()
 
-export const AUTH_ERROR = 'Email o contraseña incorrectos'
+export const AUTH_ERROR = 'DNI o contraseña incorrectos'
 
-const normEmail = (email) => String(email || '').trim().toLowerCase()
-
-async function hashPassword(email, password) {
-  const text = `${normEmail(email)}:${password}`
-  // crypto.subtle solo existe en contextos seguros (https o localhost). Si se abre
-  // por IP de la red local (http://192.168…), se usa un hash simple (FNV-1a).
-  if (globalThis.crypto?.subtle) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
-  }
-  let h = 0x811c9dc5
-  for (const ch of text) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0
-  return `fnv-${h.toString(16)}`
-}
-
-function readJSON(key, fallback) {
-  try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
+const ALLOWED = {
+  vecino: ['ciudadano', 'operador', 'administrador'],
+  municipio: ['operador', 'administrador'],
 }
 
 function writeSession(role, session) {
@@ -57,60 +36,24 @@ function writeSession(role, session) {
 }
 
 const sessionCache = {}
-// Lectura sincrónica (para rutas protegidas y para firmar acciones en el mock).
 export function readSession(role) {
   const raw = localStorage.getItem(sessionKey(role))
-  if (sessionCache[role]?.raw !== raw) sessionCache[role] = { raw, value: raw ? JSON.parse(raw) : null }
-  return sessionCache[role].value
-}
-
-function toSession(user, role) {
-  return { userId: user.userId, nombre: user.nombre, email: user.email, role, token: `demo-${user.userId}` }
-}
-
-export async function register({ nombre, email, password }) {
-  const users = readJSON(USERS_KEY, [])
-  const e = normEmail(email)
-  if (users.some((u) => u.email === e) || e === DEMO_USERS.vecino.email || e === DEMO_USERS.municipio.email) {
-    throw new ApiError(409, 'Ya hay una cuenta con ese email')
+  if (sessionCache[role]?.raw !== raw) {
+    let value = null
+    try { value = raw ? JSON.parse(raw) : null } catch { value = null }
+    sessionCache[role] = { raw, value }
   }
-  const user = {
-    userId: `u-${Date.now().toString(36)}`,
-    nombre: nombre.trim(),
-    email: e,
-    passwordHash: await hashPassword(e, password),
-    createdAt: Date.now(),
+  const s = sessionCache[role].value
+  if (s?.expiresAt && s.expiresAt < Date.now()) return null
+  return s
+}
+
+function tokenPayload(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+  } catch {
+    return {}
   }
-  localStorage.setItem(USERS_KEY, JSON.stringify([...users, user]))
-  const session = toSession(user, 'vecino')
-  writeSession('vecino', session)
-  return session
-}
-
-// role: 'vecino' | 'municipio'. Cada rol solo acepta sus propias cuentas.
-export async function login({ email, password, role }) {
-  const e = normEmail(email)
-  const hash = await hashPassword(e, password)
-  const demo = DEMO_USERS[role]
-  let user = null
-  if (demo && e === demo.email && hash === (await hashPassword(demo.email, demo.password))) {
-    user = demo
-  } else if (role === 'vecino') {
-    user = readJSON(USERS_KEY, []).find((u) => u.email === e && u.passwordHash === hash) || null
-  }
-  if (!user) throw new ApiError(401, AUTH_ERROR)
-  const session = toSession(user, role)
-  writeSession(role, session)
-  return session
-}
-
-export async function logout(role) {
-  writeSession(role, null)
-  return { ok: true }
-}
-
-export async function getSession(role) {
-  return readSession(role)
 }
 
 window.addEventListener('storage', (e) => {
@@ -124,12 +67,79 @@ export function useSession(role) {
   )
 }
 
-const agentName = () => readSession('municipio')?.nombre || 'Personal municipal'
+/* ---------- HTTP ---------- */
 
-/* ---------- Modo de la IA ---------- */
+async function request(path, { method = 'GET', body, form, role } = {}) {
+  const headers = {}
+  const token = role ? readSession(role)?.token : null
+  if (token) headers.Authorization = `Bearer ${token}`
+  let payload
+  if (form) payload = form
+  else if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    payload = JSON.stringify(body)
+  }
 
-export const getMode = () => getState().mode
-export const setMode = (mode) => setState((s) => ({ ...s, mode }))
+  let r
+  try {
+    r = await fetch(`${API_BASE}${path}`, { method, headers, body: payload })
+  } catch {
+    throw new ApiError(0, 'No hay conexión con el servidor. Probá de nuevo en un rato.')
+  }
+  const data = await r.json().catch(() => null)
+  if (!r.ok) {
+    if (r.status === 401 && token) writeSession(role, null)
+    throw new ApiError(r.status, data?.mensaje || `Error ${r.status}`)
+  }
+  return data
+}
+
+async function fetchAllPages(path, role) {
+  const sep = path.includes('?') ? '&' : '?'
+  const items = []
+  for (let pagina = 1; pagina <= 50; pagina++) {
+    const data = await request(`${path}${sep}pagina=${pagina}`, { role })
+    items.push(...data.items)
+    if (pagina >= data.totalPaginas) break
+  }
+  return items
+}
+
+/* ---------- Usuarios ---------- */
+
+const cleanDni = (v) => String(v || '').replace(/[.\s]/g, '')
+
+export async function register({ nombre, dni, password }) {
+  await request('/auth/registro', { method: 'POST', body: { nombre: nombre.trim(), dni: cleanDni(dni), password } })
+  return login({ dni, password, role: 'vecino' })
+}
+
+export async function login({ dni, password, role }) {
+  const { accessToken, rol, nombre } = await request('/auth/login', {
+    method: 'POST',
+    body: { dni: cleanDni(dni), password },
+  })
+  if (!ALLOWED[role].includes(rol)) {
+    throw new ApiError(403, 'Esta cuenta no tiene acceso al panel municipal.')
+  }
+  const { sub, exp } = tokenPayload(accessToken)
+  const session = {
+    userId: Number(sub),
+    nombre,
+    role,
+    rol,
+    token: accessToken,
+    expiresAt: exp ? exp * 1000 : null,
+  }
+  writeSession(role, session)
+  return session
+}
+
+export async function logout(role) {
+  writeSession(role, null)
+}
+
+/* ---------- IA ---------- */
 
 export async function checkIA() {
   try {
@@ -142,217 +152,341 @@ export async function checkIA() {
   }
 }
 
-/* ---------- Servicio de visión ---------- */
+/* ---------- Traducción backend → front ---------- */
 
-export async function analyzeImage(file) {
-  if (getMode() === 'offline') return offlineAnalysis(file)
-  try {
-    const fd = new FormData()
-    fd.append('file', file)
-    const r = await fetch(`${IA_BASE}/v1/analyze`, { method: 'POST', body: fd })
-    if (!r.ok) throw new ApiError(r.status, await r.text())
-    return { ...(await r.json()), source: 'live' }
-  } catch (e) {
-    // 413/415/422 son errores de la foto: hay que mostrárselos al vecino, no taparlos.
-    if (e instanceof ApiError && [413, 415, 422].includes(e.status)) throw e
-    console.warn('IA no disponible, uso la respuesta guardada', e)
-    return offlineAnalysis(file)
-  }
+export const STATUS_FROM = { pendiente: 'Pendiente', programado: 'Programado', en_reparacion: 'En reparación', resuelto: 'Resuelto' }
+const STATUS_TO = Object.fromEntries(Object.entries(STATUS_FROM).map(([k, v]) => [v, k]))
+const SEVERITY_FROM = { leve: 'leve', moderada: 'moderado', grave: 'grave' }
+const TYPE_LABELS = { pothole: 'Bache', crack: 'Grieta' }
+
+const ts = (d) => (d ? new Date(d).getTime() : null)
+
+// Con ALMACEN_IMAGENES=local el backend guarda "local://…", que el navegador no puede abrir.
+function imageUrl(u) {
+  if (!u || u.startsWith('local://')) return null
+  return u
 }
 
-// Plan B: respuesta real guardada del servicio (public/fixtures/analyze-demo.json).
-async function offlineAnalysis(file) {
-  const fx = await fetch('/fixtures/analyze-demo.json').then((r) => r.json())
-  // Si el fixture no trae imagen, se muestra la foto local (rotulada como no procesada).
-  const localPreview = fx.image ? null : await fileToDataURL(file)
-  return { ...fx, source: 'offline', localPreview }
-}
-
-/* ---------- Reportes (simula el backend) ---------- */
-
-export async function createReport({ file, lat, lng, description }) {
-  const analysis = await analyzeImage(file)
-  const raw = analysis.image ? `data:image/jpeg;base64,${analysis.image}` : analysis.localPreview
-  const imageUrl = raw ? await downscale(raw) : null
-  // eslint-disable-next-line no-unused-vars
-  const { image, localPreview, source, ...meta } = analysis
-
-  let result
-  setState((s) => {
-    const now = Date.now()
-    const reportId = `BC-${String(s.counters.BC).padStart(4, '0')}`
-    const near = findNearCase(s, lat, lng)
-    let cases = s.cases
-    let tNext = s.counters.T
-    let caseId
-
-    if (near) {
-      caseId = near.id
-    } else {
-      caseId = `T-${String(tNext++).padStart(4, '0')}`
-      const ctx = nearestContext(s, lat, lng)
-      cases = [...cases, {
-        id: caseId, lat, lng, ...ctx,
-        status: 'Pendiente',
-        history: [{ status: 'Pendiente', at: now, by: 'Sistema' }],
-        createdAt: now,
-      }]
-    }
-
-    const report = {
-      id: reportId, caseId, lat, lng, description, createdAt: now, imageUrl,
-      analysis: meta,
-      severity: reportSeverity(meta),
-      review: needsReview(meta) ? 'pendiente' : null,
-      userId: readSession('vecino')?.userId ?? null,
-      source,
-    }
-    result = { report, caseId, joined: Boolean(near) }
-    return { ...s, cases, reports: [...s.reports, report], counters: { BC: s.counters.BC + 1, T: tNext } }
-  })
-  return result
-}
-
-// Duplicados: SOLO por cercanía geográfica (no hay similitud de imagen).
-function findNearCase(s, lat, lng) {
-  let best = null
-  for (const c of s.cases) {
-    if (c.status === 'Resuelto' || c.discarded) continue
-    const d = distanceM(lat, lng, c.lat, c.lng)
-    if (d <= DUPLICATE_RADIUS_M && (!best || d < best.d)) best = { ...c, d }
-  }
-  return best
-}
-
-// Sin OpenStreetMap en la demo: copia calle/jerarquía del caso cargado más cercano
-// (si está a menos de 150 m) y barrio/índice social simulados del más cercano.
-function nearestContext(s, lat, lng) {
-  const sorted = s.cases
-    .filter((c) => c.seed)
-    .map((c) => ({ c, d: distanceM(lat, lng, c.lat, c.lng) }))
-    .sort((a, b) => a.d - b.d)
-  const n = sorted[0]
-  if (!n) return { street: 'Calle sin identificar', hierarchy: 'local', barrio: '—', socialIndex: 0.5 }
-  const close = n.d < 150
+function toAnalysis(detecciones = [], size = null) {
+  const detections = detecciones.map((d) => ({
+    type: d.tipo,
+    model_class: d.claseModelo,
+    label_es: CLASS_LABELS[d.claseModelo] || TYPE_LABELS[d.tipo] || d.claseModelo,
+    confidence: d.confianza,
+    bbox: d.bbox,
+    area_pct: d.areaPct,
+  }))
+  const max = detections.reduce((m, d) => Math.max(m, d.confidence), 0)
   return {
-    street: close ? n.c.street : 'Calle sin identificar',
-    hierarchy: close ? n.c.hierarchy : 'local',
-    barrio: n.c.barrio,
-    socialIndex: n.c.socialIndex,
+    width: size?.width ?? null,
+    height: size?.height ?? null,
+    detections,
+    summary: { damage_found: detections.length > 0, max_confidence: detections.length ? max : null },
+    privacy: null,
   }
 }
 
-// Dirección aproximada para mostrar al vecino. En la demo no hay geocodificación:
-// se usa la calle cargada más cercana (el backend lo resolvería con OpenStreetMap).
-export async function locate(lat, lng) {
-  return nearestContext(getState(), lat, lng)
+const BACKEND_WEIGHTS = { gravedad: 0.4, jerarquia: 0.25, reportes: 0.15, vulnerabilidad: 0.2 }
+const BACKEND_SEVERITY = { leve: 0.3, moderada: 0.6, grave: 1 }
+const HIERARCHY_LABELS = [[1, 'Avenida principal'], [0.7, 'Avenida secundaria'], [0.5, 'Calle colectora'], [0.3, 'Calle residencial'], [0.1, 'Pasaje o camino']]
+
+// El backend no expone el peso de la calle: se despeja de la prioridad (barrio sin índice = 0,5).
+function estimateHierarchy(t, reportCount) {
+  const g = BACKEND_SEVERITY[t.gravedad] ?? 0
+  const r = Math.min(reportCount / 5, 1)
+  const raw = (t.prioridad - BACKEND_WEIGHTS.gravedad * g - BACKEND_WEIGHTS.reportes * r
+    - BACKEND_WEIGHTS.vulnerabilidad * UNKNOWN_SOCIAL) / BACKEND_WEIGHTS.jerarquia
+  const [weight, label] = HIERARCHY_LABELS.reduce((best, h) => (Math.abs(h[0] - raw) < Math.abs(best[0] - raw) ? h : best))
+  return { weight, label }
 }
 
-function bestDetection(r) {
-  return [...(r.analysis.detections || [])].sort((a, b) => b.confidence - a.confidence)[0]
+function toHistory(creadoEn, historial = []) {
+  return [
+    { status: 'Pendiente', at: ts(creadoEn), by: 'Sistema' },
+    ...historial.map((h) => ({ status: STATUS_FROM[h.estadoNuevo], at: ts(h.creadoEn), by: h.usuario || 'Municipio' })),
+  ]
 }
 
-function caseView(s, c) {
-  const all = s.reports.filter((r) => r.caseId === c.id)
-  const valid = all.filter((r) => r.review !== 'descartado')
-  const confirmed = valid.filter((r) => r.review !== 'pendiente')
-  const severity = worst(confirmed.map((r) => r.severity))
-  const top = confirmed.find((r) => r.severity === severity)
+function reviewOf(t) {
+  if (t.necesitaRevision) return 'pendiente'
+  if (t.revisionDecision === 'rechazada') return 'descartado'
+  if (t.revisionDecision === 'confirmada') return 'confirmado'
+  return null
+}
+
+function toReport(r, caseId) {
   return {
-    ...c,
-    reports: confirmed,
-    reportCount: confirmed.length,
-    pendingCount: valid.length - confirmed.length,
-    severity,
-    typeLabel: top ? top.manualLabel || bestDetection(top)?.label_es || '—' : '—',
-    photo: [...confirmed].reverse().find((r) => r.imageUrl) || null,
-    maxConfidence: Math.max(0, ...confirmed.map((r) => r.analysis.summary?.max_confidence ?? 0)),
+    id: String(r.id),
+    caseId: String(caseId),
+    createdAt: ts(r.creadoEn),
+    description: r.descripcion,
+    imageUrl: imageUrl(r.imagenUrl),
+    analysis: toAnalysis(r.detecciones),
+    source: 'live',
   }
 }
 
-/* ---------- Lecturas ---------- */
+function caseView(t, d) {
+  const reports = (d?.reportes ?? []).map((r) => toReport(r, t.id))
+  const detections = reports.flatMap((r) => r.analysis.detections)
+  const top = detections.filter((x) => x.type === t.tipo).sort((a, b) => b.confidence - a.confidence)[0]
+  const hierarchy = estimateHierarchy(t, t.reportes)
+  const rev = { necesitaRevision: d?.necesitaRevision ?? t.necesitaRevision, revisionDecision: d?.revisionDecision ?? null }
+  return {
+    id: String(t.id),
+    lat: t.lat,
+    lng: t.lng,
+    street: t.calle || 'Calle sin identificar',
+    barrio: d?.barrio || t.barrio || 'Sin barrio',
+    status: STATUS_FROM[t.estado] ?? t.estado,
+    severity: SEVERITY_FROM[t.gravedad] ?? null,
+    typeLabel: t.tipo ? CLASS_LABELS[top?.model_class] || TYPE_LABELS[t.tipo] : 'Sin daño detectado',
+    hierarchyLabel: `${hierarchy.label} (estimada)`,
+    hierarchyWeight: hierarchy.weight ?? UNKNOWN_HIERARCHY,
+    socialIndex: UNKNOWN_SOCIAL,
+    socialKnown: false,
+    backendPriority: t.prioridad,
+    reportCount: t.reportes,
+    pendingCount: 0,
+    needsReview: rev.necesitaRevision,
+    review: reviewOf(rev),
+    reports,
+    photo: [...reports].reverse().find((r) => r.imageUrl) || null,
+    maxConfidence: Math.max(0, ...detections.map((x) => x.confidence)),
+    history: toHistory(t.creadoEn, d?.historial),
+    createdAt: ts(t.creadoEn),
+    updatedAt: ts(t.actualizadoEn),
+  }
+}
 
-// Un caso entra a la lista solo si tiene al menos un reporte confirmado.
+/* ---------- Tickets (municipio) ---------- */
+
+const listCache = new Map()
+function fetchTickets(estado) {
+  const key = estado || 'abiertos'
+  const hit = listCache.get(key)
+  if (hit && Date.now() - hit.at < 2000) return hit.promise
+  const promise = fetchAllPages(estado ? `/tickets?estado=${estado}` : '/tickets', 'municipio')
+  promise.catch(() => listCache.delete(key))
+  listCache.set(key, { at: Date.now(), promise })
+  return promise
+}
+
+const detailCache = new Map()
+async function ticketDetail(t) {
+  const hit = detailCache.get(t.id)
+  if (hit && hit.updatedAt === t.actualizadoEn) return hit.promise
+  const promise = request(`/tickets/${t.id}`, { role: 'municipio' })
+  promise.catch(() => detailCache.delete(t.id))
+  detailCache.set(t.id, { updatedAt: t.actualizadoEn, promise })
+  return promise
+}
+
+async function mapLimit(xs, limit, fn) {
+  const out = new Array(xs.length)
+  let i = 0
+  const worker = async () => { while (i < xs.length) { const k = i++; out[k] = await fn(xs[k]) } }
+  await Promise.all(Array.from({ length: Math.min(limit, xs.length) }, worker))
+  return out
+}
+
+async function loadCases(includeResolved) {
+  const [open, resolved] = await Promise.all([
+    fetchTickets(null),
+    includeResolved ? fetchTickets('resuelto') : [],
+  ])
+  const tickets = [...open, ...resolved]
+  const details = await mapLimit(tickets, 6, ticketDetail)
+  return tickets.map((t, i) => caseView(t, details[i]))
+}
+
 export async function listCases({ includeResolved = false } = {}) {
-  const s = getState()
-  return s.cases
-    .map((c) => caseView(s, c))
-    .filter((c) => c.reportCount > 0 && (includeResolved || c.status !== 'Resuelto'))
+  return (await loadCases(includeResolved)).filter((c) => c.review !== 'descartado')
 }
 
 export async function getCase(id) {
-  const s = getState()
-  const c = s.cases.find((x) => x.id === id)
-  return c ? caseView(s, c) : null
-}
-
-export async function getReport(id) {
-  const s = getState()
-  const r = s.reports.find((x) => x.id === id)
-  if (!r) return null
-  return { ...r, case: s.cases.find((c) => c.id === r.caseId) }
+  return (await listCases({ includeResolved: true })).find((c) => c.id === String(id)) || null
 }
 
 export async function listReviewQueue() {
-  const s = getState()
-  return s.reports
-    .filter((r) => r.review === 'pendiente')
-    .map((r) => ({ ...r, case: s.cases.find((c) => c.id === r.caseId) }))
+  const cases = await loadCases(false)
+  return cases
+    .filter((c) => c.needsReview)
+    .map((c) => {
+      const last = c.reports[c.reports.length - 1]
+      return {
+        ...(last || { id: c.id, createdAt: c.createdAt, imageUrl: null, analysis: toAnalysis([]) }),
+        caseId: c.id,
+        case: c,
+        review: 'pendiente',
+      }
+    })
 }
 
-// "Mis reportes": los del usuario logueado (el backend lo sacaría del token).
-export async function listMyReports() {
-  const s = getState()
-  const userId = readSession('vecino')?.userId
-  if (!userId) return []
-  return s.reports
-    .filter((r) => r.userId === userId)
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .map((r) => ({ ...r, case: s.cases.find((c) => c.id === r.caseId) }))
-}
-
-/* ---------- Acciones del municipio ---------- */
-
-// decision: { action: 'confirmar' | 'corregir' | 'descartar', modelClass?, label?, severity? }
-export async function reviewReport(id, decision) {
-  setState((s) => ({
-    ...s,
-    reports: s.reports.map((r) => {
-      if (r.id !== id) return r
-      const base = { ...r, reviewedAt: Date.now(), reviewedBy: agentName() }
-      if (decision.action === 'confirmar') return { ...base, review: 'confirmado' }
-      if (decision.action === 'descartar') return { ...base, review: 'descartado' }
-      return { ...base, review: 'corregido', severity: decision.severity, manualLabel: decision.label }
-    }),
-  }))
+export async function reviewCase(caseId, { action }) {
+  const decision = { confirmar: 'confirmada', descartar: 'rechazada' }[action]
+  await request(`/tickets/${caseId}/revision`, { method: 'POST', body: { decision }, role: 'municipio' })
+  bump()
 }
 
 export async function updateCaseStatus(id, status) {
-  setState((s) => ({
-    ...s,
-    cases: s.cases.map((c) =>
-      c.id === id && c.status !== status
-        ? { ...c, status, history: [...c.history, { status, at: Date.now(), by: agentName() }] }
-        : c),
+  await request(`/tickets/${id}/estado`, { method: 'PATCH', body: { estado: STATUS_TO[status] }, role: 'municipio' })
+  bump()
+}
+
+const TRANSITIONS = {
+  Pendiente: ['Programado', 'En reparación', 'Resuelto'],
+  Programado: ['En reparación', 'Resuelto'],
+  'En reparación': ['Resuelto'],
+  Resuelto: [],
+}
+export const canTransition = (from, to) => TRANSITIONS[from]?.includes(to) ?? false
+
+export function getStats() {
+  return request('/estadisticas', { role: 'municipio' })
+}
+
+/* ---------- Reportes (vecino) ---------- */
+
+// "Mis reportes" no trae detecciones: se guardan las que devuelve POST /reportes.
+const SENT_KEY = 'bachecero:reportes-enviados'
+const readSent = () => { try { return JSON.parse(localStorage.getItem(SENT_KEY)) || {} } catch { return {} } }
+const previews = new Map()
+
+async function imageSize(file) {
+  try {
+    const bmp = await createImageBitmap(file)
+    const size = { width: bmp.width, height: bmp.height }
+    bmp.close()
+    return size
+  } catch {
+    return null
+  }
+}
+
+export async function createReport({ file, lat, lng, description }) {
+  const fd = new FormData()
+  fd.append('foto', file)
+  fd.append('lat', String(lat))
+  fd.append('lng', String(lng))
+  if (description?.trim()) fd.append('descripcion', description.trim())
+  const res = await request('/reportes', { method: 'POST', form: fd, role: 'vecino' })
+
+  const id = String(res.reporteId)
+  localStorage.setItem(SENT_KEY, JSON.stringify({
+    ...readSent(),
+    [id]: { detecciones: res.detecciones, necesitaRevision: res.necesitaRevision },
+  }))
+  const size = await imageSize(file)
+  previews.set(id, { url: URL.createObjectURL(file), ...size })
+  bump()
+  return { report: { id }, caseId: String(res.ticketId), joined: !res.nuevoTicket }
+}
+
+export async function listMyReports() {
+  const session = readSession('vecino')
+  if (!session) return []
+  const items = await fetchAllPages('/reportes/mios', 'vecino')
+  const sent = readSent()
+  return items.map((r) => {
+    const id = String(r.id)
+    const extra = sent[id]
+    const preview = previews.get(id)
+    const url = imageUrl(r.imagenUrl)
+    const status = STATUS_FROM[r.ticket.estado] ?? r.ticket.estado
+    return {
+      id,
+      caseId: String(r.ticket.id),
+      createdAt: ts(r.creadoEn),
+      description: r.descripcion,
+      imageUrl: url || preview?.url || null,
+      analysis: toAnalysis(extra?.detecciones, !url && preview ? preview : null),
+      source: 'live',
+      localPhoto: !url && Boolean(preview),
+      userId: session.userId,
+      review: null,
+      reviewAtCreation: Boolean(extra?.necesitaRevision),
+      case: {
+        id: String(r.ticket.id),
+        status,
+        street: r.ticket.calle || 'Calle sin identificar',
+        barrio: r.ticket.barrio || 'Sin barrio',
+        history: [
+          { status: 'Pendiente', at: ts(r.creadoEn), by: 'Sistema' },
+          ...(status !== 'Pendiente' ? [{ status, at: null, by: 'Municipio' }] : []),
+        ],
+      },
+    }
+  })
+}
+
+export async function getReport(id) {
+  return (await listMyReports()).find((r) => r.id === String(id)) || null
+}
+
+export async function locate(lat, lng) {
+  try {
+    return await reverseAddress(lat, lng)
+  } catch {
+    return { street: 'Ubicación marcada en el mapa', barrio: null }
+  }
+}
+
+/* ---------- Novedades ---------- */
+
+const toNews = (n) => ({ id: String(n.id), title: n.titulo, text: n.contenido, at: ts(n.publicadoEn) })
+
+export async function listNews(role = 'vecino') {
+  return (await fetchAllPages('/novedades', role)).map(toNews)
+}
+
+export async function listNewsAdmin() {
+  const items = await fetchAllPages('/novedades/gestion', 'municipio')
+  return items.map((n) => ({
+    ...toNews(n),
+    status: n.estado,
+    origin: n.origen,
+    author: n.autor,
+    approvedBy: n.aprobadoPor,
+    createdAt: ts(n.creadoEn),
   }))
 }
 
-/* ---------- Hook para los componentes ---------- */
+async function newsAction(path, options) {
+  const res = await request(path, { ...options, role: 'municipio' })
+  bump()
+  return res
+}
 
-// Vuelve a pedir los datos cuando cambia el estado (mock) o cada 5 s (backend real).
-export function useLive(fn, deps = []) {
-  const s = useStore()
+export const generateNews = (anio, mes) => newsAction('/novedades/generar', { method: 'POST', body: { anio, mes } })
+export const createNews = (titulo, contenido) => newsAction('/novedades', { method: 'POST', body: { titulo, contenido } })
+export const editNews = (id, titulo, contenido) => newsAction(`/novedades/${id}`, { method: 'PATCH', body: { titulo, contenido } })
+export const publishNews = (id) => newsAction(`/novedades/${id}/publicar`, { method: 'POST' })
+export const deleteNews = (id) => newsAction(`/novedades/${id}`, { method: 'DELETE' })
+
+/* ---------- Hook ---------- */
+
+// Vuelve a pedir los datos cada 5 s y después de cada cambio hecho desde esta pestaña.
+export function useLiveState(fn, deps = []) {
+  const v = useSyncExternalStore(
+    (l) => { changeListeners.add(l); return () => changeListeners.delete(l) },
+    () => version,
+  )
   const [tick, setTick] = useState(0)
-  const [data, setData] = useState(null)
+  const [state, setState] = useState({ data: null, error: null })
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 5000)
     return () => clearInterval(t)
   }, [])
   useEffect(() => {
     let alive = true
-    fn().then((d) => alive && setData(d))
+    fn()
+      .then((data) => alive && setState({ data, error: null }))
+      .catch((error) => alive && setState((s) => ({ data: s.data, error })))
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s, tick, ...deps])
-  return data
+  }, [v, tick, ...deps])
+  return state
 }
+
+export const useLive = (fn, deps) => useLiveState(fn, deps).data

@@ -35,7 +35,7 @@ export default function MyReports() {
                       {st.status ? <StatusBadge status={st.status} /> : <Badge tone="warn">{st.label}</Badge>}
                     </div>
                     <p className="mt-0.5 truncate text-sm">{r.case?.street}</p>
-                    <p className="text-xs text-muted">{formatDate(r.createdAt)}{r.source === 'simulado' ? ' · simulado' : ''}</p>
+                    <p className="text-xs text-muted">{formatDate(r.createdAt)}</p>
                   </div>
                   <Icon name="chevronRight" className="size-5 text-muted" />
                 </Card>

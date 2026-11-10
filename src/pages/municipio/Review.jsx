@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { listReviewQueue, reviewReport, useLive } from '../../api'
-import { CLASS_LABELS, REVIEW_CONFIDENCE, SEVERITY_ORDER } from '../../config'
+import { listReviewQueue, reviewCase, useLive } from '../../api'
+import { REVIEW_CONFIDENCE } from '../../config'
 import AnalysisImage from '../../components/AnalysisImage'
-import { Button, Card, Icon, Input, Spinner } from '../../components/ui'
+import { Button, Card, Icon, Spinner } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 import PageHeader from './PageHeader'
 
@@ -29,9 +29,8 @@ export default function Review() {
 }
 
 function ReviewCard({ r }) {
-  const [fixing, setFixing] = useState(false)
-  const [modelClass, setModelClass] = useState('pothole')
-  const [severity, setSeverity] = useState('moderado')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
   const { detections, summary } = r.analysis
   const conf = Math.round((summary?.max_confidence ?? 0) * 100)
   const reason = detections.length === 0
@@ -39,9 +38,20 @@ function ReviewCard({ r }) {
     : `Confianza máxima ${conf} % (menor a ${REVIEW_CONFIDENCE * 100} %)`
   const proposal = detections[0]?.label_es
 
+  async function decide(action) {
+    setBusy(true)
+    setError(null)
+    try {
+      await reviewCase(r.caseId, { action })
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+
   return (
     <Card className="flex flex-col gap-3">
-      <AnalysisImage imageUrl={r.imageUrl} analysis={r.analysis} source={r.source} />
+      <AnalysisImage imageUrl={r.imageUrl} analysis={r.analysis} />
 
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -64,34 +74,17 @@ function ReviewCard({ r }) {
       </div>
       {r.description && <p className="text-sm italic text-muted">“{r.description}”</p>}
 
-      {fixing ? (
-        <div className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-2">
-          <Input as="select" label="Tipo de daño" value={modelClass} onChange={(e) => setModelClass(e.target.value)}>
-            {Object.entries(CLASS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Input>
-          <Input as="select" label="Gravedad" value={severity} onChange={(e) => setSeverity(e.target.value)}>
-            {SEVERITY_ORDER.map((s) => <option key={s}>{s}</option>)}
-          </Input>
-          <Button variant="secondary" onClick={() => setFixing(false)}>Cancelar</Button>
-          <Button onClick={() => reviewReport(r.id, { action: 'corregir', label: CLASS_LABELS[modelClass], severity })}>
-            Guardar corrección
-          </Button>
-        </div>
-      ) : (
-        <div className="mt-auto grid grid-cols-3 gap-2">
-          <Button variant="success" size="sm" disabled={!detections.length}
-            title={!detections.length ? 'Sin detecciones: usá Corregir' : undefined}
-            onClick={() => reviewReport(r.id, { action: 'confirmar' })}>
-            <Icon name="check" className="size-4" /> Confirmar
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => setFixing(true)}>
-            <Icon name="pencil" className="size-4" /> Corregir
-          </Button>
-          <Button variant="danger" size="sm" onClick={() => reviewReport(r.id, { action: 'descartar' })}>
-            <Icon name="x" className="size-4" /> Descartar
-          </Button>
-        </div>
-      )}
+      {error && <p role="alert" className="text-sm font-semibold text-red-600 dark:text-red-400">{error}</p>}
+      <div className="mt-auto grid grid-cols-2 gap-2">
+        <Button variant="success" size="sm" disabled={busy}
+          title={!detections.length ? 'La IA no vio daño, pero hay un bache: el ticket sigue abierto' : undefined}
+          onClick={() => decide('confirmar')}>
+          <Icon name="check" className="size-4" /> Confirmar daño
+        </Button>
+        <Button variant="danger" size="sm" disabled={busy} onClick={() => decide('descartar')}>
+          <Icon name="x" className="size-4" /> Descartar
+        </Button>
+      </div>
     </Card>
   )
 }

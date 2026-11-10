@@ -1,6 +1,5 @@
 import { MapContainer, TileLayer } from 'react-leaflet'
 
-// Mapa base con OpenStreetMap. En modo oscuro las tiles se oscurecen por CSS (styles.css).
 export default function MapBase({ children, className = '', ...props }) {
   return (
     <MapContainer className={`z-0 ${className}`} {...props}>

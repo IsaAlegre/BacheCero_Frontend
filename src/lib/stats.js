@@ -1,4 +1,3 @@
-// Estadísticas calculadas con los datos que hay (casos + historial). Nada escrito a mano.
 import { STATUSES } from '../config'
 
 const DAY = 86400000
@@ -15,13 +14,11 @@ export const byStatus = (cases) => STATUSES.map((s) => ({ label: s, value: cases
 
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null)
 
-// Días promedio desde que se crea el caso hasta que se marca Resuelto.
 export function avgResolutionDays(cases) {
   const xs = cases.filter((c) => c.status === 'Resuelto').map((c) => (lastAt(c, 'Resuelto') - c.createdAt) / DAY)
   return { days: avg(xs), n: xs.length }
 }
 
-// Días promedio de cada tramo (Pendiente → Programado → En reparación → Resuelto).
 export function avgStageDays(cases) {
   return STATUSES.slice(1).map((to, i) => {
     const from = STATUSES[i]

@@ -1,5 +1,3 @@
-// Modo oscuro por clase en <html>. Al inicio respeta prefers-color-scheme;
-// si la persona lo cambia, se guarda en localStorage y gana sobre el sistema.
 import { useSyncExternalStore } from 'react'
 
 const KEY = 'bachecero:theme'
@@ -28,7 +26,6 @@ export function setTheme(theme) {
 
 export const toggleTheme = () => setTheme(current() === 'dark' ? 'light' : 'dark')
 
-// Mientras no haya preferencia guardada, sigue al sistema en vivo.
 media.addEventListener('change', (e) => {
   if (!stored()) apply(e.matches ? 'dark' : 'light')
 })

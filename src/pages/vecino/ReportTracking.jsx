@@ -7,7 +7,6 @@ import { Card, Icon, Spinner, STATUS_META } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 import PageTitle from './PageTitle'
 
-// Seguimiento: línea de tiempo Pendiente → Programado → En reparación → Resuelto.
 export default function ReportTracking() {
   const { id } = useParams()
   const session = useSession('vecino')
@@ -58,7 +57,7 @@ export default function ReportTracking() {
                       <p className={`font-bold ${done ? '' : 'text-muted'}`}>
                         {s} {i === current && <span className="ml-1 text-xs font-semibold text-orange-dark dark:text-orange">· Estado actual</span>}
                       </p>
-                      <p className="text-sm text-muted">{at ? formatDate(at) : 'Todavía no'}</p>
+                      <p className="text-sm text-muted">{at ? formatDate(at) : done ? '—' : 'Todavía no'}</p>
                     </div>
                   </li>
                 )
@@ -68,7 +67,7 @@ export default function ReportTracking() {
         </div>
 
         <div className="space-y-2 lg:sticky lg:top-24 lg:order-first">
-          <AnalysisImage imageUrl={r.imageUrl} analysis={r.analysis} source={r.source} />
+          <AnalysisImage imageUrl={r.imageUrl} analysis={r.analysis} />
           <p className="text-center text-xs text-muted">
             Caso #{r.caseId} · reportado el {formatDate(r.createdAt)}
           </p>

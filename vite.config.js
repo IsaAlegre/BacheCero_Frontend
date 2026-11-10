@@ -3,11 +3,15 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import tailwindcss from '@tailwindcss/vite'
 
-// El servicio de IA (FastAPI) no tiene CORS: el navegador le habla a /ia
-// y Vite reenvía a localhost:8000 sacando el prefijo.
-const iaProxy = {
+// /api → backend (BACKEND_URL) y /ia → servicio de IA (IA_URL), sin CORS.
+const proxy = {
+  '/api': {
+    target: process.env.BACKEND_URL || 'http://localhost:3000',
+    changeOrigin: true,
+    rewrite: (path) => path.replace(/^\/api/, ''),
+  },
   '/ia': {
-    target: 'http://localhost:8000',
+    target: process.env.IA_URL || 'http://localhost:8000',
     changeOrigin: true,
     rewrite: (path) => path.replace(/^\/ia/, ''),
   },
@@ -39,13 +43,13 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Nunca cachear las llamadas a la IA ni los fixtures viejos.
-        navigateFallbackDenylist: [/^\/ia/],
+        // Nunca cachear las llamadas a la API ni a la IA.
+        navigateFallbackDenylist: [/^\/ia/, /^\/api/],
         // woff2: la fuente va dentro del bundle para que la PWA funcione sin internet.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
     }),
   ],
-  server: { proxy: iaProxy },
-  preview: { proxy: iaProxy },
+  server: { proxy },
+  preview: { proxy },
 })

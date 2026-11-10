@@ -44,3 +44,23 @@ export async function searchAddress(query, { signal } = {}) {
   cache.set(key, results)
   return results
 }
+
+export async function reverseAddress(lat, lng) {
+  const key = `rev:${lat.toFixed(5)},${lng.toFixed(5)}`
+  if (cache.has(key)) return cache.get(key)
+
+  const slot = Math.max(Date.now(), lastRequest + MIN_INTERVAL_MS)
+  lastRequest = slot
+  if (slot > Date.now()) await wait(slot - Date.now())
+
+  const params = new URLSearchParams({
+    lat: String(lat), lon: String(lng), format: 'jsonv2', zoom: '17', addressdetails: '1', 'accept-language': 'es',
+  })
+  const r = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`)
+  if (!r.ok) throw new Error(`Nominatim respondió ${r.status}`)
+  const a = (await r.json()).address || {}
+  const street = a.road ? `${a.road}${a.house_number ? ` ${a.house_number}` : ''}` : 'Ubicación marcada en el mapa'
+  const place = { street, barrio: a.neighbourhood || a.suburb || null }
+  cache.set(key, place)
+  return place
+}

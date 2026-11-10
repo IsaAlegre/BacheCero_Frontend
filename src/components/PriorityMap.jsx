@@ -10,7 +10,6 @@ function FlyTo({ c }) {
   return null
 }
 
-// Círculos coloreados por prioridad; el tamaño crece con la cantidad de reportes agrupados.
 export default function PriorityMap({ cases, selectedId, onSelect, className = '' }) {
   const dark = useTheme() === 'dark'
   const selected = cases.find((c) => c.id === selectedId)

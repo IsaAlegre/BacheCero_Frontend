@@ -23,9 +23,9 @@ export default function Result() {
       </div>
 
       <div className="space-y-2 lg:col-start-1 lg:row-span-2 lg:row-start-1">
-        <AnalysisImage imageUrl={r.imageUrl} analysis={r.analysis} source={r.source} />
-        {r.source === 'offline' && !r.analysis.image && (
-          <p className="text-sm text-muted">Foto sin procesar: el servicio de IA no estaba disponible.</p>
+        <AnalysisImage imageUrl={r.imageUrl} analysis={r.analysis} />
+        {r.localPhoto && (
+          <p className="text-sm text-muted">Esta es la foto que subiste. El municipio guarda la versión con caras y patentes difuminadas.</p>
         )}
       </div>
 
@@ -43,11 +43,13 @@ export default function Result() {
           </ul>
           <p className="mt-3 border-t border-line pt-3 text-sm text-muted">
             <Icon name="shield" className="mr-1 inline size-4 align-[-3px]" />
-            Se difuminaron {privacy.faces_blurred} rostro(s) y {privacy.plates_blurred} patente(s).
+            {privacy
+              ? `Se difuminaron ${privacy.faces_blurred} rostro(s) y ${privacy.plates_blurred} patente(s).`
+              : 'Antes de guardarla, la IA difuminó las caras y patentes de la foto.'}
           </p>
         </Card>
 
-        {r.review === 'pendiente' && (
+        {(r.review === 'pendiente' || r.reviewAtCreation) && (
           <Notice icon="eye" tone="warn" title="Lo revisa una persona">
             La IA no está segura con esta foto, así que una persona del municipio la va a revisar.
           </Notice>

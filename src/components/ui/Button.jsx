@@ -24,7 +24,6 @@ export function buttonClass({ variant = 'primary', size = 'md', block = false, c
   ].join(' ')
 }
 
-// <Button to="/x"> se dibuja como Link; si no, como <button>.
 export default function Button({ variant, size, block, className, to, type = 'button', ...props }) {
   const cls = buttonClass({ variant, size, block, className })
   if (to) return <Link to={to} className={cls} {...props} />

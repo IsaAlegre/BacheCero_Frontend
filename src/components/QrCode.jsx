@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { qrMatrix } from '../lib/qr'
 
-// QR en SVG. Siempre oscuro sobre blanco (también en modo oscuro), para que lo lea la cámara.
 export default function QrCode({ value, className = 'size-40', label }) {
   const { d, n } = useMemo(() => {
     const m = qrMatrix(value)

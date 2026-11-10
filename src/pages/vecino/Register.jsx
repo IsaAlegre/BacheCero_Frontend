@@ -7,7 +7,7 @@ import { validateRegister } from '../../lib/validate'
 
 export default function Register() {
   const nav = useNavigate()
-  const [form, setForm] = useState({ nombre: '', email: '', password: '', confirm: '' })
+  const [form, setForm] = useState({ nombre: '', dni: '', password: '', confirm: '' })
   const [errors, setErrors] = useState({})
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -24,7 +24,7 @@ export default function Register() {
       await register(form)
       nav('/vecino', { replace: true })
     } catch (err) {
-      setError(err.status === 409 ? err.message : 'No pudimos crear la cuenta. Probá de nuevo.')
+      setError([400, 409, 0].includes(err.status) ? err.message : 'No pudimos crear la cuenta. Probá de nuevo.')
       setBusy(false)
     }
   }
@@ -36,10 +36,10 @@ export default function Register() {
       <form noValidate className="space-y-4" onSubmit={submit}>
         <AuthError>{error}</AuthError>
         <Input label="Nombre" autoComplete="given-name" value={form.nombre} onChange={set('nombre')} error={errors.nombre} />
-        <Input label="Email" type="email" inputMode="email" autoComplete="email" value={form.email}
-          onChange={set('email')} error={errors.email} placeholder="tu@email.com" />
+        <Input label="DNI" inputMode="numeric" autoComplete="username" value={form.dni}
+          onChange={set('dni')} error={errors.dni} placeholder="Sin puntos, ej.: 30111222" />
         <Input label="Contraseña" type="password" autoComplete="new-password" value={form.password}
-          onChange={set('password')} error={errors.password} hint="Mínimo 6 caracteres" />
+          onChange={set('password')} error={errors.password} hint="Mínimo 8 caracteres" />
         <Input label="Repetí la contraseña" type="password" autoComplete="new-password" value={form.confirm}
           onChange={set('confirm')} error={errors.confirm} />
         <Button type="submit" block size="lg" disabled={busy}>{busy ? 'Creando…' : 'Crear cuenta'}</Button>
@@ -49,9 +49,6 @@ export default function Register() {
         <Link to="/vecino/login" className="font-bold text-navy underline-offset-4 hover:underline dark:text-navy-200">
           Iniciá sesión
         </Link>
-      </p>
-      <p className="mt-4 text-center text-xs text-muted">
-        Cuenta de demo: se guarda solo en este navegador.
       </p>
     </AuthShell>
   )

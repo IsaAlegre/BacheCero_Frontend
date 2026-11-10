@@ -1,4 +1,3 @@
-// Instalación de la PWA.
 // - Android/Chrome: se guarda el evento beforeinstallprompt para dispararlo desde un botón.
 //   Se escucha acá (al cargar la app) porque el evento puede llegar antes de que exista el botón.
 // - iPhone/iPad: Safari no tiene ese evento; se muestran los pasos a mano.
@@ -27,7 +26,6 @@ export const isIOS = () =>
   /iphone|ipad|ipod/i.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) // iPad con iPadOS
 
-// 'installed' | 'prompt' (Android/Chrome) | 'ios' | null (no se puede instalar desde acá)
 function snapshot() {
   if (isStandalone()) return 'installed'
   if (deferred) return 'prompt'

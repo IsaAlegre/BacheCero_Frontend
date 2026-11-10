@@ -1,6 +1,5 @@
 import { LEVELS } from '../../config'
 
-// Alta con texto blanco; media y baja con texto oscuro (contraste suficiente sobre naranja y amarillo).
 const CLS = {
   alta: 'bg-prio-alta text-white',
   media: 'bg-prio-media text-navy-950',
